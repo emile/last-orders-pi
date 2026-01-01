@@ -5,7 +5,7 @@ SRC_DIR     := src
 PYTHON      := python3
 ASSEMBLER   := $(ASM_DIR)/asm.py
 PASCAL      := fpc
-CPP			:= g++
+CPP         := g++
 
 # location of EDSAC emulator
 # tested with edsim by Lee Wittenberg
@@ -66,7 +66,6 @@ help:
 	@echo "Targets:"
 	@echo "  all         - Build all assembly files (default)"
 	@echo "  pi_mem      - Build obj/pi_mem.e"
-	@echo "  run         - Run EDSAC with PROG (default: pi2)"
-	@echo "              Usage: make run PROG=pi3"
+	@echo "  run_mem     - Run EDSAC with PROG=pi_mem"
 	@echo "  clean       - Remove build artifacts"
 	@echo "  help        - Show this help message"

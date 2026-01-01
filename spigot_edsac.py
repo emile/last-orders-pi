@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
-this
+this implementation closely matches the logic of pi_mem.asm
+and was used to validate correctness
+
 usage:
     python3 spigot_edsac.py
 """
