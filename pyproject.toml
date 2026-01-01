@@ -1,0 +1,10 @@
+[project]
+name = "last_orders_pi"
+version = "0.1.0"
+description = "Computing the digits of PI with EDSAC"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "lark>=1.3.1",
+    "loguru>=0.7.3",
+]
