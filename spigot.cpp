@@ -1,6 +1,10 @@
 /*
-compute digits of PI using spigot algorithm
-source taken from https://www.hvks.com/Numerical/Downloads/HVE%20Practical%20implementation%20of%20Spigot%20Algorithms%20for%20transcendental%20constants.pdf
+pi_spigot_32() was transcribed from
+"Practical implementation of Spigot Algorithms for Transcendental Constants"
+by Henrik Vestermark (23 Aug 2022)
+
+https://www.hvks.com/Numerical/Downloads/HVE%20Practical%20implementation%20of%20Spigot%20Algorithms%20for%20transcendental%20constants.pdf
+
 g++ spigot.cpp -o spigot_cpp
 */
 

@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/png" href="favicon.png">
+<title>EDSAC computes pi</title>
+<style>
+  body { font-family: monospace; max-width: 60em; margin: 2em auto; padding: 0 1em; }
+  h1 { font-size: 1.2em; }
+  nav { margin-bottom: 1.5em; border-bottom: 1px solid #ccc; padding-bottom: 0.5em; }
+  nav a { color: inherit; text-decoration: none; margin-right: 1.5em; }
+  nav a:hover { text-decoration: underline; }
+  nav .active { font-weight: bold; }
+  textarea { width: 100%; font-family: monospace; font-size: 0.85em; tab-size: 8; }
+  #asm { height: 20em; }
+  #tape { height: 12em; }
+  .controls { margin: 0.5em 0; display: flex; gap: 0.5em; align-items: center; flex-wrap: wrap; }
+  .controls button { padding: 0.4em 1.2em; font-family: monospace; font-size: 1em; }
+  .controls label { font-size: 0.9em; }
+  .controls input[type=number] { width: 8em; font-family: monospace; font-size: 0.9em; padding: 0.3em; }
+  #output { font-size: 1.4em; word-break: break-all; min-height: 1.5em; position: relative; }
+  #output::after { content: ''; position: absolute; top: 0; bottom: 0; left: 69ch; border-left: 1px solid #ccc; pointer-events: none; }
+  .cursor { animation: blink 1s step-end infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  #status { color: #666; margin-top: 0.5em; }
+  .registers { margin: 0.5em 0; line-height: 1.6; }
+  .registers .label { color: #666; }
+  .bits { letter-spacing: 0.1em; }
+  .section-label { color: #666; font-size: 0.9em; margin: 0.5em 0 0.2em; }
+  .tank-row { display: flex; gap: 0.8em; }
+  .tank-addr { color: #999; width: 3em; text-align: right; flex-shrink: 0; }
+  .dial-btn { width: 2.4em; font-family: monospace; font-size: 1em; padding: 0.4em 0; }
+</style>
+<script src="https://cdn.jsdelivr.net/pyodide/v0.29.3/full/pyodide.js"></script>
+</head>
+<body>
+<nav>
+  <strong>Last Orders Pi</strong> &nbsp;&middot;&nbsp;
+  <span class="active">Simulator</span> &nbsp;&middot;&nbsp;
+  <a href="info.html">About</a> &nbsp;&middot;&nbsp;
+  <a href="https://github.com/emile/last-orders-pi">Source</a>
+</nav>
+<h1>EDSAC (1949) simulator</h1>
+
+<div class="section-label">Assembly source
+  <select id="asm-select">
+    <option value="">- load source -</option>
+    <option value="asm/pi_tank.asm" selected>pi_tank (tank storage)</option>
+    <option value="asm/pi_tape.asm">pi_tape (tape storage)</option>
+  </select>
+</div>
+<textarea id="asm"></textarea>
+<div class="controls">
+  <button id="assemble" disabled>Assemble</button>
+  <span id="asm-status"></span>
+</div>
+
+<div class="section-label">EDSAC tape (Initial Orders 2 format) <span id="tape-length"></span>
+  <select id="tape-select">
+    <option value="">- load tape -</option>
+    <optgroup label="Demonstration Programs">
+      <option value="tapes/Demonstration Programs/Hello.txt">Hello</option>
+      <option value="tapes/Demonstration Programs/OXO.txt">OXO</option>
+      <option value="tapes/Demonstration Programs/Primes.txt">Primes</option>
+      <option value="tapes/Demonstration Programs/Squares.txt">Squares</option>
+      <option value="tapes/Demonstration Programs/Cubes.txt">Cubes</option>
+      <option value="tapes/Demonstration Programs/TPK.txt">TPK</option>
+    </optgroup>
+    <optgroup label="Contributed Programs">
+      <option value="tapes/Contributed Programs/Conway.txt">Conway</option>
+      <option value="tapes/Contributed Programs/Mandelbrot.txt">Mandelbrot</option>
+      <option value="tapes/Contributed Programs/PrettyP.txt">PrettyP</option>
+      <option value="tapes/Contributed Programs/Sieve.txt">Sieve</option>
+    </optgroup>
+    <optgroup label="Eiiti Wada">
+      <option value="tapes/e100.txt">e 100</option>
+      <option value="tapes/e200.txt">e 200</option>
+      <option value="tapes/e500.txt">e 500</option>
+      <option value="tapes/pi100.txt">pi 100</option>
+      <option value="tapes/pi200.txt">pi 200</option>
+      <option value="tapes/pi500.txt">pi 500</option>
+    </optgroup>
+  </select>
+</div>
+<textarea id="tape"></textarea>
+<div class="controls">
+  <button id="run">Run</button>
+  <button id="stop" disabled>Stop</button>
+  <button id="step-btn">Step</button>
+  <label>steps: <input type="number" id="step-count" value="1" min="1"></label>
+  <button id="reset">Reset</button>
+  <button id="clear">Clear</button>
+  <label>Initial Orders:
+    <select id="io-select">
+      <option value="2" selected>IO2</option>
+      <option value="1">IO1</option>
+    </select>
+  </label>
+</div>
+<div class="registers">
+  <div><span class="label">ACC </span><span class="bits" id="acc">00000000000000000 0 00000000000000000 0 00000000000000000 0 00000000000000000</span></div>
+  <div><span class="label"> PC </span><span id="pc">0</span></div>
+</div>
+<div class="controls" id="dial-row">
+  <span class="label">Dial:</span>
+  <button class="dial-btn" disabled data-n="0">0</button>
+  <button class="dial-btn" disabled data-n="1">1</button>
+  <button class="dial-btn" disabled data-n="2">2</button>
+  <button class="dial-btn" disabled data-n="3">3</button>
+  <button class="dial-btn" disabled data-n="4">4</button>
+  <button class="dial-btn" disabled data-n="5">5</button>
+  <button class="dial-btn" disabled data-n="6">6</button>
+  <button class="dial-btn" disabled data-n="7">7</button>
+  <button class="dial-btn" disabled data-n="8">8</button>
+  <button class="dial-btn" disabled data-n="9">9</button>
+</div>
+<div class="section-label">Memory tank: <select id="tank-select">
+  <option value="">-</option>
+  <option>0</option><option>1</option><option>2</option><option>3</option>
+  <option>4</option><option>5</option><option>6</option><option>7</option>
+  <option>8</option><option>9</option><option>10</option><option>11</option>
+  <option>12</option><option>13</option><option>14</option><option>15</option>
+  <option>16</option><option>17</option><option>18</option><option>19</option>
+  <option>20</option><option>21</option><option>22</option><option>23</option>
+  <option>24</option><option>25</option><option>26</option><option>27</option>
+  <option>28</option><option>29</option><option>30</option><option>31</option>
+</select></div>
+<div id="tank-display" class="registers"></div>
+<pre id="output"></pre>
+<p id="sec-tape-status" class="section-label"></p>
+<p id="status"></p>
+
+<script>
+
+let wasmExports = null;
+let stateView = null;
+let pyodide = null;
+let running = false;
+let dialResumeRun = false;
+let jsTotalSteps = 0;
+const BATCH_SIZE = 100000;
+
+let outputTextNode = null;
+let outputCursorNode = null;
+
+// --- WASM setup ---
+
+async function loadWasm() {
+  const resp = await fetch('zigsac.wasm');
+  const { instance } = await WebAssembly.instantiate(await resp.arrayBuffer(), {
+    env: { outputByte: (byte) => {
+      outputTextNode.nodeValue += String.fromCharCode(byte);
+    }}
+  });
+  wasmExports = instance.exports;
+  const stateByteOffset = wasmExports.getStatePtr();
+  stateView = new Uint32Array(wasmExports.memory.buffer, stateByteOffset, 8 + 1024);
+  const pre = document.getElementById('output');
+  outputTextNode = document.createTextNode('');
+  outputCursorNode = document.createElement('span');
+  outputCursorNode.className = 'cursor';
+  outputCursorNode.textContent = '▌';
+  pre.appendChild(outputTextNode);
+  pre.appendChild(outputCursorNode);
+}
+
+// --- Pyodide setup ---
+
+async function loadPyodideAndAsm() {
+  const asmStatus = document.getElementById('asm-status');
+  try {
+    asmStatus.textContent = 'Loading Python runtime\u2026';
+    pyodide = await loadPyodide();
+
+    asmStatus.textContent = 'Installing lark\u2026';
+    await pyodide.loadPackage('micropip');
+    await pyodide.runPythonAsync(`
+import micropip
+await micropip.install('lark')
+`);
+
+    asmStatus.textContent = 'Loading assembler\u2026';
+    const asmSrc = await (await fetch('asm.py')).text();
+    pyodide.runPython(asmSrc);
+
+    asmStatus.textContent = '';
+    document.getElementById('assemble').disabled = false;
+  } catch (e) {
+    asmStatus.textContent = 'Failed to load assembler: ' + e.message;
+    console.error('Pyodide load error:', e);
+  }
+}
+
+function doAssemble() {
+  const asmStatus = document.getElementById('asm-status');
+  const src = document.getElementById('asm').value;
+  try {
+    pyodide.globals.set('_asm_input', src);
+    const result = pyodide.runPython(`
+try:
+    _asm_result = assemble(_asm_input, addresses=True)
+except Exception as _e:
+    from lark.exceptions import UnexpectedInput
+    if isinstance(_e, UnexpectedInput):
+        _asm_result = 'ERROR:' + f'Parse error at line {_e.line}, col {_e.column}:\\n{_e.get_context(_asm_input)}'
+    else:
+        import traceback
+        _asm_result = 'ERROR:' + traceback.format_exc()
+_asm_result
+`);
+    if (result.startsWith('ERROR:')) {
+      asmStatus.textContent = result.slice(6);
+    } else {
+      document.getElementById('tape').value = result;
+      asmStatus.textContent = 'Assembled.';
+      setButtons('ready');
+    }
+  } catch (e) {
+    asmStatus.textContent = 'Error: ' + e.message;
+    console.error('Assemble error:', e.message);
+  }
+}
+
+// --- State display ---
+
+const BITS = ['·', '●'];
+
+function accBits() {
+  const lo = stateView[0], mid = stateView[1], hi = stateView[2];
+  function bit(i) {
+    if (i >= 64) return BITS[(hi >>> (i - 64)) & 1];
+    if (i >= 32) return BITS[(mid >>> (i - 32)) & 1];
+    return BITS[(lo >>> i) & 1];
+  }
+  let s = '';
+  for (let i = 70; i >= 54; i--) s += bit(i);
+  s += ' ' + bit(53) + ' ';
+  for (let i = 52; i >= 36; i--) s += bit(i);
+  s += ' ' + bit(35) + ' ';
+  for (let i = 34; i >= 18; i--) s += bit(i);
+  s += ' ' + bit(17) + ' ';
+  for (let i = 16; i >= 0; i--) s += bit(i);
+  return s;
+}
+
+function longWordBits(shortAddr) {
+  const lo = stateView[8 + shortAddr];      // bits 0-16 = data, bit 17 = sandwich
+  const hi = stateView[8 + shortAddr + 1];  // bits 0-16 = data
+  let s = '';
+  for (let b = 16; b >= 0; b--) s += BITS[(hi >>> b) & 1];
+  s += BITS[(lo >>> 17) & 1];
+  for (let b = 16; b >= 0; b--) s += BITS[(lo >>> b) & 1];
+  return s;
+}
+
+function renderTank() {
+  const sel = document.getElementById('tank-select').value;
+  document.getElementById('tank-display').innerHTML = '';
+  if (sel === '') return;
+  const tank = parseInt(sel);
+  const base = tank * 32;
+  const rows = [];
+  for (let lw = 15; lw >= 0; lw--) {
+    const addr = base + lw * 2;
+    rows.push(
+      `<div class="tank-row"><span class="tank-addr">${addr}</span>` +
+      `<span class="bits">${longWordBits(addr)}</span></div>`
+    );
+  }
+  document.getElementById('tank-display').innerHTML = rows.join('');
+}
+
+function renderState() {
+  wasmExports.syncState();
+  document.getElementById('acc').textContent = accBits();
+  document.getElementById('pc').textContent = stateView[5];
+  renderTank();
+  const secLen = wasmExports.getSecTapeLen();
+  document.getElementById('sec-tape-status').textContent = secLen ? `Data tape: ${fmt(secLen)} chars` : '';
+}
+
+// --- Simulator controls ---
+
+function loadTape() {
+  const tapeText = document.getElementById('tape').value;
+  const tape = new TextEncoder().encode(tapeText);
+  const ptr = wasmExports.getTapeBuffer();
+  new Uint8Array(wasmExports.memory.buffer, ptr, tape.length).set(tape);
+  const useIo1 = document.getElementById('io-select').value === '1' ? 1 : 0;
+  wasmExports.init(tape.length, useIo1);
+  document.getElementById('tape-length').textContent = `(${fmt(tape.length)} chars)`;
+  jsTotalSteps = 0;
+  outputTextNode.nodeValue = '';
+}
+
+function doRun() {
+  loadTape();
+  running = true;
+  setButtons('running');
+  updateStatus('Running\u2026');
+  const t0 = performance.now();
+  requestAnimationFrame(() => runBatch(t0));
+}
+
+function runBatch(t0) {
+  if (!running) {
+    renderState();
+    const ms = (performance.now() - t0).toFixed(1);
+    updateStatus(`Stopped after ${fmt(jsTotalSteps)} steps (${ms} ms). PC=${wasmExports.getPC()}`);
+    setButtons('stepping');
+    return;
+  }
+  // Run as many batches as fit in ~16ms to maintain 60fps while maximising throughput
+  const deadline = performance.now() + 16;
+  while (performance.now() < deadline) {
+    jsTotalSteps += wasmExports.step(BATCH_SIZE);
+    if (wasmExports.isHalted()) {
+      running = false;
+      renderState();
+      const ms = (performance.now() - t0).toFixed(1);
+      if (wasmExports.isTapeExhausted()) {
+        updateStatus(`Error: tape exhausted after ${fmt(jsTotalSteps)} steps (${ms} ms). PC=${wasmExports.getPC()} — wrong Initial Orders?`);
+        setButtons('halted');
+      } else {
+        dialResumeRun = true;
+        updateStatus(`Halted after ${fmt(jsTotalSteps)} steps (${ms} ms). PC=${wasmExports.getPC()} — awaiting dial input or Reset`);
+        setButtons('halted');
+      }
+      return;
+    }
+  }
+  renderState();
+  updateStatus(`Running\u2026 ${fmt(jsTotalSteps)} steps. PC=${wasmExports.getPC()}`);
+  requestAnimationFrame(() => runBatch(t0));
+}
+
+function doStop() {
+  running = false;
+}
+
+function doStep() {
+  const n = parseInt(document.getElementById('step-count').value) || 1;
+  if (wasmExports.isHalted()) loadTape();
+  jsTotalSteps += wasmExports.step(n);
+  renderState();
+  const total = jsTotalSteps;
+  const halted = wasmExports.isHalted();
+  if (halted && wasmExports.isTapeExhausted()) {
+    updateStatus(`Error: tape exhausted after ${fmt(total)} steps. PC=${wasmExports.getPC()} — wrong Initial Orders?`);
+  } else {
+    updateStatus(`${halted ? 'Halted' : 'Paused'} after ${fmt(total)} steps. PC=${wasmExports.getPC()}`);
+  }
+  setButtons(halted ? 'halted' : 'stepping');
+}
+
+function doReset() {
+  dialResumeRun = false;
+  wasmExports.resumeExec();
+  running = true;
+  setButtons('running');
+  updateStatus('Resuming\u2026');
+  requestAnimationFrame(() => runBatch(performance.now()));
+}
+
+function setButtons(state) {
+  document.getElementById('run').disabled = state === 'disabled' || state === 'running';
+  document.getElementById('stop').disabled = state !== 'running';
+  document.getElementById('step-btn').disabled = state === 'disabled' || state === 'running';
+  document.getElementById('reset').disabled = state === 'disabled' || state === 'ready' || state === 'running';
+  document.getElementById('clear').disabled = state === 'disabled' || state === 'running';
+  const dialEnabled = state === 'halted' || state === 'stepping';
+  for (const btn of document.querySelectorAll('.dial-btn')) btn.disabled = !dialEnabled;
+}
+
+function doDial(n) {
+  wasmExports.dialInput(n);
+  renderState();
+  if (dialResumeRun) {
+    dialResumeRun = false;
+    running = true;
+    setButtons('running');
+    updateStatus(`Dial ${n} — resuming\u2026`);
+    requestAnimationFrame(() => runBatch(performance.now()));
+  } else {
+    updateStatus(`Dial ${n} entered. Paused. PC=${wasmExports.getPC()}`);
+    setButtons('stepping');
+  }
+}
+
+function updateStatus(text) {
+  document.getElementById('status').textContent = text;
+}
+
+function fmt(n) {
+  return n.toLocaleString();
+}
+
+// --- Init ---
+
+document.getElementById('asm-select').addEventListener('change', async function() {
+  const path = this.value;
+  if (!path) return;
+  document.getElementById('asm').value = await (await fetch(path)).text();
+});
+function updateTapeLength() {
+  const len = new TextEncoder().encode(document.getElementById('tape').value).length;
+  document.getElementById('tape-length').textContent = len ? `(${fmt(len)} chars)` : '';
+}
+document.getElementById('tape').addEventListener('input', updateTapeLength);
+document.getElementById('tape-select').addEventListener('change', async function() {
+  const path = this.value;
+  if (!path) return;
+  document.getElementById('tape').value = await (await fetch(path)).text();
+  updateTapeLength();
+  setButtons('ready');
+});
+document.getElementById('clear').addEventListener('click', () => {
+  dialResumeRun = false;
+  wasmExports.clearMachine();
+  outputTextNode.nodeValue = '';
+  renderState();
+  updateStatus('Cleared. Memory and registers zeroed.');
+  setButtons('ready');
+});
+document.getElementById('run').addEventListener('click', doRun);
+document.getElementById('stop').addEventListener('click', doStop);
+document.getElementById('step-btn').addEventListener('click', doStep);
+document.getElementById('reset').addEventListener('click', doReset);
+document.getElementById('assemble').addEventListener('click', doAssemble);
+document.getElementById('tank-select').addEventListener('change', renderTank);
+for (const btn of document.querySelectorAll('.dial-btn')) {
+  btn.addEventListener('click', () => doDial(parseInt(btn.dataset.n)));
+}
+setButtons('disabled');
+
+(async () => {
+  const defaultAsm = document.getElementById('asm-select').value;
+  if (defaultAsm) {
+    document.getElementById('asm').value = await (await fetch(defaultAsm)).text();
+  }
+  await loadWasm();
+  renderState();
+  updateStatus('Ready. Tape can be edited directly or assembled from source.');
+  setButtons('ready');
+  // Load Pyodide in background — assembler button enables when ready
+  loadPyodideAndAsm();
+})();
+</script>
+</body>
+</html>

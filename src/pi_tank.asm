@@ -1,6 +1,13 @@
 ;; compute the digits of pi using spigot algorithm
-;; for EDSAC instruction set
+;; for EDSAC instruction set (initial orders 2)
 ;; uses main memory only
+;; assembled output runs on unmodified EDSAC hardware
+
+inline "PFGKIFAFRDLFUFOFE@A6FG@E8FEZPF"
+inline "@&*LAST!ORDERS!PI!#A*!TANK!STORAGE"
+inline "@&!EMILE!JOUBERT!#A*!MMXXVI@&@&#"
+
+comment "LAST ORDERS PI - TANK STORAGE"
 
 ; define entry point
 start .main
@@ -9,7 +16,26 @@ start .main
 def_loc .array_start 4
 
 ; locate program in top memory against upper limit
-org 842
+org 829
+
+
+def_proc .format_colwidth:
+        add             .var_output_column      f
+        add             .const_1                f
+        mov_dirty       .var_output_column      f
+        sub             .const_max_column       f
+        jlt             .format_colwidth_exit   f
+
+        out             .const_carriage_return  f
+        out             .const_line_feed        f
+        out             .const_space            f
+        mov             .var_tmp                f
+        add             .const_1                f
+        mov             .var_output_column      f
+.format_colwidth_exit:
+        mov             .var_tmp                f
+ret_proc .format_colwidth
+
 
 ;; print a superdigit of size log10(radix)
 .output_superdigit_param: def_num 0             f
@@ -23,10 +49,12 @@ def_proc .output_superdigit:
         lshift          1024                    f   ; shift left 10 bits for teleprinter
         mov             .var_tmp                f   ; save to temp
         out             .var_tmp                f   ; output digit2 to teleprinter
+        call            .format_colwidth
         add             .var_remainder          f
         lshift          1024                    f
         mov             .var_tmp                f
         out             .var_tmp                f
+        call            .format_colwidth
 ret_proc .output_superdigit
 
 
@@ -72,7 +100,7 @@ ret_proc .carry_detector
 ; computes .var_numerator // var_denominator
 ; quotient is in .var_quotient
 ; remainder is is .var_remainder
-;; warning: extremely slow
+;; warning: extremely slow (but compact)
 .var_numerator:   def_num 0 d
 .var_denominator: def_num 0 d
 .var_quotient:    def_num 0 d
@@ -121,9 +149,9 @@ ret_proc .main_inner
 
 
 def_proc .main:
-        out             .const_figure_shift     f   ; output teleprinter char for formatting
-        out             .const_carriage_return  f   ; output teleprinter char for formatting
-        out             .const_line_feed        f   ; output teleprinter char for formatting
+;        out             .const_figure_shift     f   ; output teleprinter char for formatting
+;        out             .const_carriage_return  f   ; output teleprinter char for formatting
+;        out             .const_line_feed        f   ; output teleprinter char for formatting
         add             .const_array_len        f   ; initialize array: load array len
         mov_dirty       .var_i                  f   ; store to i
 
@@ -142,7 +170,7 @@ def_proc .main:
 
 .main_outer_loop:
         ; quotient = 0
-        mov             0                       f   ; clear accumulator
+        mov             .var_tmp                f   ; clear accumulator
         mov             .var_quotient           f   ; store q to 0
         add             .const_array_len        f   ; load array len
         mov             .var_i                  f   ; initialize i to len
@@ -150,7 +178,7 @@ def_proc .main:
 
 .main_i_loop:
         ;; read a[i] (previous remainder)
-        mov             0                       f   ; clear accumulator
+        mov             .var_tmp                f   ; clear accumulator
         add             .var_i                  f   ; load i
         lshift          0                       d   ; multiply i by 2
         add             .var_template_read      f   ; add template load to get address
@@ -180,7 +208,7 @@ def_proc .main:
         jge             .main_i_loop            f   ; continue i-loop
 
         ;; quotient, remainder = divmod(quotient, radix)
-        mov             0                       d   ; reset accumulator
+        mov             .var_tmp                d   ; reset accumulator
         add             .var_quotient           f   ; load final quotient q
         mov             .var_numerator          f   ; set up numerator for divmod
         add             .const_radix            f   ; load radix
@@ -210,6 +238,7 @@ ret_proc .main
         .const_figure_shift:    #    0          F   ; teleprinter char 2 figure shift
         .const_carriage_return: @    0          F   ; teleprinter char 3 carriage return
         .const_line_feed:       &    0          F   ; teleprinter char 4 line feed
+        .const_space:           !    0          F
 
         .const_1:        def_num     1          d   ; constant 1
         .const_2:        def_num     2          f   ; constant 2
@@ -219,13 +248,13 @@ ret_proc .main
         .const_array_init: def_num   20         f   ; array initialised with this constant
         .const_radix_log: def_num    2          f   ; size of superdigit
 
-        .const_array_len: def_num    838        f   ; len: length of remainder array
-        .var_digits_remaining: def_num 252      f   ; n: number of iterations
+        .const_array_len: def_num    822        f   ; len: length of remainder array
+        .var_digits_remaining: def_num 250      f   ; n: number of iterations
 
         .var_tmp:        def_num     0          f   ; scratch variable
         .var_i:          def_num     0          d   ; i: loop counter variable
         .var_template_write: T       .array_start F ; template: transfer to array base
-        .var_template_read: A        .array_start F ; template: load from array base
-        .var_quotient:   def_num     0          d   ; q: quotient variable
-        .var_remainder:  def_num     0          d   ; current remainder from array
-        .var_temp_remainder: def_num 0          d   ; temporary remainder for digit extraction
+        .var_template_read:  A       .array_start F ; template: load from array base
+
+        .var_output_column: def_num 0           f
+        .const_max_column:  def_num 11          f

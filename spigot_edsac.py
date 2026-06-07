@@ -1,173 +1,76 @@
-#!/usr/bin/env python3
 """
-this implementation closely matches the logic of pi_mem.asm
-and was used to validate correctness
-
-usage:
-    python3 spigot_edsac.py
+src/pi_tank.asm was based on this template
 """
-import sys
-import math
 
-# complete carry handling
-def carry_detector_general(radix):
-    carry_limit = radix - 1
-    predigit = None
-    carries = 0
-    def detector(d):
-        nonlocal predigit
-        nonlocal carries
-        if predigit is None:
-            predigit = d
-            return None
-        if d < carry_limit:
-            return_value = [predigit] + [carry_limit] * carries
-            predigit = d
-            carries = 0
-            return return_value
-        if d == carry_limit:
-            carries += 1
-            return None
-        if d == radix:
-            return_value = [predigit + 1] + [0] * carries
-            carries = 0
-            predigit = 0
-            return return_value
-        assert False
-    return detector
+RADIX      = 100   # .const_radix
+ARRAY_LEN  = 822   # .const_array_len
+ARRAY_INIT = 20    # .const_array_init
+RADIX_LOG  = 2     # .const_radix_log
+MAX_COLUMN = 11    # .const_max_column
 
-# no carry detection
-def carry_detector0(radix):
-    def detector(d):
-        return [d]
-    return detector
+DIGITS_REMAINING_INIT = 250
 
-# minimal carry detection
-def carry_detector1(radix):
-    predigit = None
-    def detector(d):
-        nonlocal predigit
-        if predigit is None:
-            predigit = d
-            return None
-        elif d == radix:
-            return_value, predigit = predigit + 1, 0
-            return [return_value]
-        else:
-            return_value, predigit = predigit, d
-            return [return_value]
-    return detector
+output_column = 0
+def format_colwidth():
+    global output_column
+    output_column += 1
+    if output_column >= MAX_COLUMN:
+        print("\n ", end="")
+        output_column = 1
 
 
-def divmod_slow(numerator, denominator):
-    quotient = 0
-    remainder = numerator
-
-    while True:
-        test = remainder - denominator
-        if test < 0:
-            # exit without updating remainder
-            break
-        # update remainder and increment quotient
-        remainder = test
-        quotient = quotient + 1
-
-    return quotient, remainder
+def output_superdigit(s):
+    tens, units = divmod(s, 10)
+    print(tens, end="")
+    format_colwidth()
+    print(units, end="")
+    format_colwidth()
 
 
-def divmodpy(numerator, denominator):
-    return divmod(numerator, denominator)
+carry_predigit = 0
+carry_initialised = 0
+def carry_detector(d):
+    global carry_predigit, carry_initialised
+    if carry_initialised < 1:
+        carry_predigit = d
+        carry_initialised = 1
+        return
+    if d >= RADIX:
+        output_superdigit(carry_predigit + 1)
+        carry_predigit = 0
+    else:
+        output_superdigit(carry_predigit)
+        carry_predigit = d
 
 
-def main_inner(radix, remainder, quotient, i):
-    x = radix * remainder + quotient * i
-    denominator = 2 * i - 1
-    new_quotient, new_remainder = divmod_local(x, denominator)
-    return new_quotient, new_remainder
+def main_inner(remainder, quotient, i):
+    return divmod(RADIX * remainder + quotient * i, 2 * i - 1)
 
 
-divmod_local = divmodpy
-carry_detector = carry_detector1
+def main():
 
-def compute_pi_digits(n, radix = 10):
+    a = [0] + [ARRAY_INIT] * ARRAY_LEN
 
-    const_log_radix = int(math.log10(radix))
-    const_init = radix // 5
-    digits_remaining = const_log_radix + n + 3 # bits stuck in carry detection buffer
-    const_array_len = int(((digits_remaining // const_log_radix) + 1) * 14)
-    released_digits = carry_detector(radix)
+    digits_remaining = DIGITS_REMAINING_INIT
 
-    # initialise array
-    # a[0] is unused, but included for clarity
-    a = [0] + [const_init] * const_array_len
-
-    output = []
-    iteration = 0
-
-    # main loop
     while digits_remaining >= 0:
 
-        iteration += 1
-
-        # initialise quotient to 0
         quotient = 0
+        i = ARRAY_LEN
 
-        # initialise i to array_len
-        i = const_array_len
-
-        # inner i-loop
-        # loop from arraylen down to i=1 (NOT including i=0)
         while i >= 1:
-            # read a[i] and save to remainder
             remainder = a[i]
+            quotient, new_rem = main_inner(remainder, quotient, i)
+            a[i] = new_rem
+            i -= 1
 
-            # call main_inner
-            new_quotient, new_remainder = main_inner(radix, remainder, quotient, i)
-
-            # save new quotient
-            quotient = new_quotient
-
-            # save new remainder to a[i]
-            a[i] = new_remainder
-
-            # decrement i and check loop condition
-            # loop continues while (i-2) >= 0, i.e., while i >= 2 after decrement
-            i = i - 1
-
-        # divide by radix to extract digits
-        new_quotient, remainder = divmod_local(quotient, radix)
-
-        # save remainder
+        new_quotient, remainder = divmod(quotient, RADIX)
         a[1] = remainder
+        carry_detector(new_quotient)
+        digits_remaining -= RADIX_LOG
 
-        # output processing for quotient
-        output_digits = released_digits(new_quotient)
-        if output_digits is not None:
-            for output_digit in output_digits:
-                for c in f"{output_digit:0{const_log_radix}}":
-                    output.append(int(c))
-                    digits_remaining -= 1
-
-    return output
+    print(end="")
 
 
-if __name__ == "__main__":
-
-    n = 250
-    radix = 100
-    if len(sys.argv) > 1:
-        n = int(sys.argv[1])
-    if len(sys.argv) > 2:
-        radix = int(sys.argv[2])
-
-    digits = compute_pi_digits(n+1, radix)
-    print(f"{digits[0]}.")
-    remaining = digits[1:n + 1]
-    for i in range(0, len(remaining), 10):
-        group = remaining[i:i+10]
-        print(''.join(map(str, group)), end=' ')
-        if (i + 10) % 50 == 0: # line for every 50 digits
-            print()
-        if (i + 10) % 1000 == 0: # paragraph every 1000 digits
-            print()
-    print()
+if __name__ == '__main__':
+    main()

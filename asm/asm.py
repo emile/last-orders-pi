@@ -2,10 +2,11 @@ import re
 import sys
 from contextlib import nullcontext
 from argparse import ArgumentParser
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import *
 from lark import Lark, Tree, Token
-from loguru import logger
+import logging
+logger = logging.getLogger("asm")
 
 # simple assembler targetting EDSAC instruction set
 
@@ -14,14 +15,17 @@ edsac_grammar = Lark(r"""
     line:   instr
           | const
           | org
-          | def
+          | def 
           | 
           | ret
           | call
+          | align_even
           | start_label
           | loc
           | classic
           | space
+          | inline
+          | comment
           
     # directives:
     org:                 "org"             INT
@@ -31,7 +35,11 @@ edsac_grammar = Lark(r"""
     def:                 "def_proc"        LABEL ":"
     ret:                 "ret_proc"        LABEL
     call:  [LABEL ":"]   "call"            LABEL
-       
+    align_even:          "align_even"
+    
+    # io:
+    #io:                  "out_tape"        INT ORDER_TERMINATOR | "out_print" ORDER_TERMINATOR
+
     loc:                 "def_loc"         LABEL INT
     instr:   [LABEL ":"] INSTR [address]   ORDER_TERMINATOR
     const:   [LABEL ":"] ("def_num" literal_num ORDER_TERMINATOR | "def_char" literal_char )            
@@ -39,9 +47,10 @@ edsac_grammar = Lark(r"""
     
     space: "."    
     LABEL: "%return%"? "." SYMBOL
-    INSTR: "add"|"sub"|"mov_mult"|"mult_add"|"mult_sub"|"mov"
+    INSTR: "add"|"sub"|"mov_mult"|"mult_add"|"mult_sub"|"mult_and"|"mov"
            |"mov_dirty"|"and"|"rshift"|"lshift"|"jge"|"jlt"
-           |"inp"|"out"|"verify"|"nop"|"round"|"halt"                      
+           |"inp"|"out"|"verify"|"nop"|"round"|"halt"
+           |"out_tape"|"in_tape"|"out_print"                   
     ORDER_TERMINATOR: /[fd]/    
     address: INT | LABEL    
         
@@ -49,6 +58,9 @@ edsac_grammar = Lark(r"""
     literal_char: "\"" CHARSET+ "\""    
     literal_decimal: [/[+-]/] INT 
     literal_binary:  [/[+-]/] /[01 _]+b/
+    
+    inline: "inline" "\"" CHARSET+ "\"" /[\n]/
+    comment: "comment" "\"" /[^"]+/ "\""  
 
     SYMBOL: ("_"|LETTER|DIGIT)+
     CHARSET: /[PQWERTYUIOJ#SZK\*\.F@D!HNM&LXGABCV0123456789]/ # todo: add figure diacritics in charset
@@ -57,7 +69,7 @@ edsac_grammar = Lark(r"""
     CONTROL_TERMINATOR: /[ZK]/
 
     COMMENT:   /;[^\n]*/
-               | "[" /[^\]]*/ "]"    
+#               | "[" /[^\]]*/ "]"    
     
     %ignore COMMENT
     %ignore WS
@@ -85,16 +97,17 @@ class Visit:
 
     _width = {"f": 1, "d": 2}
     _width_reverse = {"0": "F", "1": "D"}
-    _charset = "PQWERTYUIOJ#SZK*.F@D!HNM&LXGABCV"
+    _charset         = """PQWERTYUIOJ#SZK*.F@"""  + """D!HNM&"""  + """LXGABCV"""
+    _charset_printer = """0123456789~#"+(~~$\r""" + """; £,.\n""" + """)/=-?:="""
     _ops = {
         "A": "add",      # add mem[n] to the accumulator
         "S": "sub",      # subtract mem[n] from the accumulator
         "H": "mov_mult", # copy mem[n] to the multiplier
         "V": "mult_add", # multiply mem[n] by the multiplier and add to the accumulator
         "N": "mult_sub", # multiply mem[n] by the multiplier and subtract from the accumulator
+        "C": "mult_and",
         "T": "mov",      # copy accumulator to mem[n] and clear the accumulator
         "U": "mov_dirty",# copy accumulator to mem[n] without clearing the accumulator
-        "C": "and",
         "R": "rshift",
         "L": "lshift",
         "E": "jge",
@@ -106,6 +119,11 @@ class Visit:
         "Y": "round",
         "Z": "halt",
     }
+    _ops_extended = {
+        "out_print",
+        "out_tape",
+        "in_tape",
+    }
 
     @dataclass
     class Order:
@@ -113,20 +131,37 @@ class Visit:
         order_terminator: str
         order_param: int = 0
         order_pi: bool = False
+
+        def is_control(self):
+            return self.order_terminator.lower() not in Visit._width
+        def as_binary(self):
+            if self.order_code in Visit._charset:
+                field1 = Visit._charset.index(self.order_code)
+            else:
+                field1 = Visit._charset_printer.index(self.order_code)
+            return f"{field1:05b}{self.order_param:011b}{Visit._width[self.order_terminator.lower()] - 1}0"
         def __repr__(self):
             order_param_repr = f"{self.order_param: 5d}" if self.order_param != 0 else ""
             order_pi_repr = "#" if self.order_pi else " "
             return f"{self.order_code} {order_param_repr:5}{order_pi_repr} {self.order_terminator.upper()}"
 
+    @dataclass
+    class MemorySlot:
+        prefix: list[Tuple[str, str]]  = field(default_factory=list)
+        comment: list[str]             = field(default_factory=list)
+        order: Optional["Visit.Order"] = None
+
 
     def __init__(self):
+        self.org_index = 0
         self.symbols: dict[str, int] = dict()
         self.opcodes: dict[str, str] = dict(zip(self._ops.values(), self._ops.keys()))
         self.opvalues: dict[int, str] = dict(enumerate(self._charset))
-        self.mem: list[Optional[Visit.Order]] = [None] * Visit.memsize
+        self.mem = [Visit.MemorySlot() for _ in range(Visit.memsize)]
         self.start_label = ".start"
         self.start_addr = None
         self.filler_order = Visit.Order("Z", "F")
+        self.nop_order = Visit.Order("X", "F")
 
     def resolve_address(self, addr_tok: Token) -> int:
         match addr_tok:
@@ -137,6 +172,8 @@ class Visit:
 
     def maybe_set_symbol(self, label_tok: Token, mem_index: int) -> None:
         if label_tok is not None:
+            if label_tok.value in self.symbols:
+                logger.warning(f"duplicate definition for {label_tok.value}")
             self.symbols[label_tok.value] = mem_index
 
     def make_order_addr(self, order_param: Tree) -> int:
@@ -160,10 +197,20 @@ class Visit:
                 order_addr_tok,
                 Token(type="ORDER_TERMINATOR", value=order_term)
             ]:
-                assert opcode in self.opcodes.keys()
-                order_code = self.opcodes[opcode]
-                order_addr = self.make_order_addr(order_addr_tok)
-                order_term = order_term
+                if opcode in Visit._ops_extended:
+                    if opcode == "out_tape":
+                        order_code = "Z"
+                        order_addr = 1024 + int(order_addr_tok.children[0].value)
+                    if opcode == "in_tape":
+                        order_code = "Z"
+                        order_addr = 512 + int(order_addr_tok.children[0].value)
+                    elif opcode == "out_print":
+                        order_code = "Z"
+                        order_addr = 1
+                else:
+                    assert opcode in self.opcodes.keys()
+                    order_code = self.opcodes[opcode]
+                    order_addr = self.make_order_addr(order_addr_tok)
             case _:
                 raise Exception(f"unrecognised instruction {instr_line}")
         return Visit.Order(order_code, order_term, order_addr)
@@ -240,12 +287,13 @@ class Visit:
             org: int,
             symbols_listing_stream = None,
             orders_output_stream = None,
-            emit_pk_spaces = True,
             emit_location = False,
+            ssi = False,
     ) -> None:
 
-        emit_ekpf_launcher = True
-        emit_pktk_headers = True
+        emit_ekpf_launcher = True and not ssi
+        emit_pktk_headers = True and not ssi
+        emit_pk_spaces = True and not ssi
 
         # 1st pass: label positions
 
@@ -259,27 +307,49 @@ class Visit:
         # 2nd pass: assemble orders
 
         mem_index = org
+        mem_max = 0
         for line in tree.children:
             mem_index = self.visit_orders(line, mem_index)
+            mem_max = max(mem_index, mem_max)
 
         # 3rd pass: emit assembled orders
 
         indent = " " * 7
         symbols_reverse = {v:k for k,v in self.symbols.items()}
-        for index, order in enumerate(self.mem):
-            if index > 0 and self.mem[index - 1] is None and self.mem[index] is not None and emit_pktk_headers:
+
+        for index, mem_slot in enumerate(self.mem):
+            order = mem_slot.order
+
+            # previous memory slots were empty, so
+            # tell instruct initial orders where to load the next order
+            if index > 0 and self.mem[index - 1].order is None and self.mem[index].order is not None and emit_pktk_headers:
                 self.emit_header(index, indent, orders_output_stream)
+
+            if len(mem_slot.comment) > 0 and not ssi:
+                print(file=orders_output_stream)
+                for comment in mem_slot.comment:
+                    print(f"[{comment}]", file=orders_output_stream)
+                print(file=orders_output_stream)
+
+            if len(mem_slot.prefix) > 0 and not ssi:
+                for prefix in mem_slot.prefix:
+                    print("[inl.] " + prefix, file=orders_output_stream)
+
             if order is not None:
-                # todo: keep index in sync when emitting GK
                 if order.order_code == "P" and order.order_terminator in {"Z", "K"} and emit_pk_spaces:
                     print(indent + ".", file=orders_output_stream)
                     print(indent + ".", file=orders_output_stream)
                 location = f"[{index:04d}] " if emit_location else indent
-                if index in symbols_reverse:
-                    symbol_hint = f" [{symbols_reverse[index]}]"
-                else:
-                    symbol_hint = ""
-                print(f"{location}{order}{symbol_hint}", file=orders_output_stream)
+                if not order.is_control():
+                    if ssi:
+                         print(order.as_binary(), file=orders_output_stream)
+                    else:
+                        symbol_hint = f" [{symbols_reverse[index]}]" if index in symbols_reverse else ""
+                        print(f"{location}{order}{symbol_hint}", file=orders_output_stream)
+            else:
+                if ssi and index <= mem_max:
+                    print(self.nop_order.as_binary(), file=orders_output_stream)
+
         if emit_ekpf_launcher:
             self.ekpf_launcher(indent, orders_output_stream)
 
@@ -293,7 +363,10 @@ class Visit:
             print(indent + str(start_order), file=orders_output_stream)
             print(indent + str(Visit.Order("P", "F")), file=orders_output_stream)
         else:
-            logger.warning("start address not found")
+            logger.warning("start address not found - using last subroutine as start address")
+            start_order = Visit.Order("E", "K")
+            print(indent + str(start_order), file=orders_output_stream)
+            print(indent + str(Visit.Order("P", "F")), file=orders_output_stream)
 
     def emit_header(self, index, indent, stream):
         print(indent + ".", file=stream)
@@ -338,10 +411,19 @@ class Visit:
                 match start_label.type:
                     case "INT": self.start_addr = int(start_label)
                     case "LABEL": self.start_label = start_label.value
-            case [Tree(data="classic", children=[label, *_])]:
-                self.maybe_set_symbol(label, mem_index)
-                next_mem_index = mem_index + 1
-            case [Tree(data=Token(_, "space"))]:
+            case [Tree(data="classic",
+                       children=[label, Token(value=order_code), order_addr_tok, order_pi_tok, Token(value=order_term)])]:
+                if order_term not in {"Z", "K"}:
+                    self.maybe_set_symbol(label, mem_index)
+                    next_mem_index = mem_index + 1
+            case [Tree(data="space")]:
+                pass
+            case [Tree(data=Token(_, "align_even"))]:
+                if mem_index % 2 == 1:
+                    next_mem_index = mem_index + 1
+            case [Tree(data="inline")]:
+                pass
+            case [Tree(data="comment")]:
                 pass
             case _:
                 logger.warning(f"ignoring while computing label positions: {line.children}")
@@ -355,52 +437,74 @@ class Visit:
             case [Tree(data="org", children=[Token("INT", org)])]:
                 next_mem_index = int(org)
             case [Tree(data="instr", children=instr)]:
-                self.mem[mem_index] = self.make_order(instr)
+                self.mem[mem_index].order = self.make_order(instr)
                 next_mem_index = mem_index + 1
             case [Tree(data="const", children=[_label, Tree(data="literal_num", children=[literal]), term])]:
                 width = Visit._width[term]
                 if mem_index % 2 == 1 and width == 2:
-                    self.mem[mem_index] = self.filler_order
+                    self.mem[mem_index].order = self.filler_order
                     mem_index += 1
                 for index, order in enumerate(self.make_const_order(literal, width)):
-                    self.mem[mem_index + index] = order
+                    self.mem[mem_index + index].order = order
                 assert width == index + 1, "Order width mismatch"
                 next_mem_index = mem_index + width
             case [Tree(data="const",
                        children=[_label, Tree(data="literal_char", children=const)])]:
                 for index, char in enumerate(const):
-                    self.mem[mem_index + index] = Visit.Order(char.value, "F")
+                    self.mem[mem_index + index].order = Visit.Order(char.value, "F")
                 next_mem_index += len(const)
             case [Tree(data="def", children=[label])]:
                 if label != self.start_label:
                     return_address = self.symbols["%return%" + label.value]
-                    self.mem[mem_index + 0] = Visit.Order("A", "F", 3)
-                    self.mem[mem_index + 1] = Visit.Order("T", "F", return_address)
+                    # todo: this assumes initial orders 2. create "U 2 F" order if not
+                    self.mem[mem_index + 0].order = Visit.Order("A", "F", 3)
+                    self.mem[mem_index + 1].order = Visit.Order("T", "F", return_address)
                     next_mem_index = mem_index + 2
             case [Tree(data="call", children=[_label, label_callee])]:
                 callee_address = self.symbols[label_callee.value]
-                self.mem[mem_index + 0] = Visit.Order("A", "F", mem_index)
-                self.mem[mem_index + 1] = Visit.Order("G", "F", callee_address)
+                self.mem[mem_index + 0].order = Visit.Order("A", "F", mem_index)
+                self.mem[mem_index + 1] .order= Visit.Order("G", "F", callee_address)
                 next_mem_index = mem_index + 2
             case [Tree(data="loc", children=[label, loc])]:
                 pass
             case [Tree(data="ret")]:
-                self.mem[mem_index] = self.filler_order
+                self.mem[mem_index].order = self.filler_order
                 next_mem_index = mem_index + 1
             case [Tree(data="classic",
                        children=[_, Token(value=order_code), order_addr_tok, order_pi_tok, Token(value=order_term)])]:
-                order_addr = self.make_order_addr(order_addr_tok)
-                order_pi = self.make_order_pi(order_pi_tok)
-                classic_order = Visit.Order(order_code, order_term, order_addr, order_pi)
-                self.mem[mem_index] = classic_order
-                next_mem_index = mem_index + 1
-            case [Tree(data="space")]:
-                pass
+                if order_term not in {"Z", "K"}:
+                    order_addr = self.make_order_addr(order_addr_tok)
+                    order_pi = self.make_order_pi(order_pi_tok)
+                    classic_order = Visit.Order(order_code, order_term, order_addr, order_pi)
+                    self.mem[mem_index].order = classic_order
+                    next_mem_index = mem_index + 1
             case [Tree(data="start_label")]:
                 pass
+            case [Tree(data="space")]:
+                pass
+            case [Tree(data="align_even")]:
+                if mem_index % 2 == 1:
+                    self.mem[mem_index].order = self.nop_order
+                    next_mem_index = mem_index + 1
+            case [Tree(data="inline", children=inline_chars)]:
+                assert inline_chars[-1] == "\n"
+                inline_str = "".join(map(lambda c: c.value, inline_chars[:-1]))
+                self.mem[mem_index].prefix.append(inline_str)
+            case [Tree(data="comment", children=[Token(_, comment_chars)])]:
+                #logger.info("added comments ", comment_chars)
+                self.mem[mem_index].comment.append(comment_chars)
             case _:
                 logger.warning(f"ignoring while generating orders: {line.children}")
         return next_mem_index
+
+
+def assemble(source_txt: str, org: int = Visit.default_org, addresses: bool = False) -> str:
+    """Assemble source text and return tape output as a string."""
+    import io
+    ast = edsac_grammar.parse(source_txt)
+    out = io.StringIO()
+    Visit().visit(ast, org=org, orders_output_stream=out, emit_location=addresses)
+    return out.getvalue()
 
 
 def main(commandline: list[str]) -> None:
@@ -410,6 +514,7 @@ def main(commandline: list[str]) -> None:
     arg_parser.add_argument("-o", "--orders_output", help="Assembled orders. Defaults to stdout")
     arg_parser.add_argument("-l", "--listing_output", help="Output symbol list to file", required=False)
     arg_parser.add_argument("-a", "--addresses", help="Output memory locations in source as comments", action="store_true", required=False, default=False)
+    arg_parser.add_argument("-s", "--ssi", help="Generate SSI object output", action="store_true", required=False, default=False)
     arg_parser.add_argument("--org", help="Default ORG (origin) location", type=int, required=False, default=Visit.default_org)
 
     args = vars(arg_parser.parse_args(commandline))
@@ -431,8 +536,9 @@ def main(commandline: list[str]) -> None:
                 org=args["org"],
                 orders_output_stream=orders_output_stream,
                 symbols_listing_stream=symbols_listing_string,
-                emit_location=args["addresses"]
+                emit_location=args["addresses"],
+                ssi=args["ssi"],
             )
 
-if __name__ == "__main__":
+if __name__ == "__main__" and len(sys.argv) > 1:
     main(sys.argv[1:])
