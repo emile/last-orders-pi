@@ -40,4 +40,4 @@ so from the programmer's perspective storage appears as a write head followed by
 a read head on an infinite buffer. 
 
 Running the simulator locally required Zig, Python and AWK, or you can
-try it [online](http://emile.freeshell.net/last-orders-pi/index.html).
+try it [online](https://last-orders-pi.pages.dev/).

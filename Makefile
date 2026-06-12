@@ -100,9 +100,6 @@ web: $(ZIGSAC_WASM)
 	cp $(SRC_DIR)/pi*.asm $(DIST_DIR)/asm/
 	cp favicon.png $(DIST_DIR)
 
-deploy: $(ZIGSAC_WASM)
-	scp -r dist/web/* sdf.org:html/last-orders-pi
-
 
 clean:
 	rm -rf spigot.o spigot_pas spigot_cpp $(DIST_DIR)
