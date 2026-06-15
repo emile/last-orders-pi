@@ -1,43 +1,28 @@
 
-# Last orders Pi
+This project answers a historical speculative question: could EDSAC have beat the record for number of digits for pi set by ENIAC?
 
-1120 decimal digits of π were known in 1949, before that record was shattered
-by ENIAC using vacuum tubes and punch cards [1](https://doi.org/10.1090%2FS0025-5718-1950-0037597-6)
+It includes an assembler targetting the instruction set of EDSAC in 1949 using initial orders 2.
 
-This project explores whether EDSAC could in theory have matched
-or beat the ENIAC record of 2037 decimal places by using paper tape for storage.
+There's an implementation of a spigot algorithm for the digits in this assembly language.
 
-The idea of using magnetic tape as addressable auxiliary storage was discussed by
-the creators of EDSAC in 1956, lending some credibility to the idea.
-[2](https://doi.org/10.1049/pi-b-1.1956.0070)
-[3](https://doi.org/10.1109%2F85.194055)
+And there's a simulator to run it, either on the commandline or [in the browser](https://last-orders-pi.pages.dev/).
 
-Eiiti Wada wrote a digit generator for EDSAC in 2022, based on Machin's formula.
-It generates 500 digits using main memory (mercury-based delay lines).
-This effort demonstrates that the original EDSAC hardware probably lacked
-the capacity to match the ENIAC record.
-[4](https://www.dcs.warwick.ac.uk/~edsac/Programs2/EiitiPie.html)
-
-This project demonstrates generating about 250 digits using main memory
-and many thousands of digits using paper tape as storage. There are many caveats:
-* The computation requires an impractical length of paper tape
+The answer to the question is a qualified "maybe". The program runs and produces thousands of digits, with caveats:
+* EDSAC would have needed IO instructions to use tape for storage
+* The computation would require an impractical length of paper tape
 * The computation would take very long on real hardware
-* The algorithm used did not exist at the time
+* The algorithm wasn't known at the time
 
-A browser-based EDSAC simulator is included with extended IO instructions
-not present in the original hardware, but could plausibly have existed:
-* Toggle output to perforator, punching paper tape (instead of teleprinter)
-* Toggle output to teleprinter (instead of perforator)
-* Switch input to paper tape
 
-Switching the input to paper tape might seem superfluous, since input
-is normally read from paper tape by default. The additional instruction
-is intended for drawing a distinction between tape containing instructions
-and tape containing data, from previous output to the perforator.
+## References
 
-There are no instructions for seeking, rewinding or addressing the tapes,
-so from the programmer's perspective storage appears as a write head followed by
-a read head on an infinite buffer. 
+   * [THE PREPARATION OF PROGRAMS FOR AN ELECTRONIC DIGITAL COMPUTER](https://en.wikipedia.org/wiki/The_Preparation_of_Programs_for_an_Electronic_Digital_Computer)
+   * [Tutorial Guide to the EDSAC Simulator](http://www.dcs.warwick.ac.uk/~edsac/Software/EdsacTG.pdf)
+   * [Assembly conventions for the EDSAC. EWD718](https://www.cs.utexas.edu/~EWD/ewd07xx/EWD718.PDF)
 
-Running the simulator locally required Zig, Python and AWK, or you can
-try it [online](https://last-orders-pi.pages.dev/).
+## See also
+   * [EDSAC on browser](http://nhiro.org/learn_language/repos/EDSAC-on-browser/index.html) by NISHIO Hirokazu
+   * [edsim](https://computerconservationsociety.org/emu/edsac/index.htm) by Lee Wittenberg
+   * [edsacasm](https://github.com/andrewjherbert/edsacasm) by Andrew Herbert
+   * [QEdsac](https://github.com/qedsac/qedsac)
+   * [Eiiti Wada programs for computing pi](https://www.dcs.warwick.ac.uk/~edsac/Programs2/EiitiPie.html)

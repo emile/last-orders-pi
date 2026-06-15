@@ -4,69 +4,110 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" type="image/png" href="favicon.png">
-<title>About — Last Orders Pi</title>
+<title>Last Orders Pi</title>
 <style>
+  html { scrollbar-gutter: stable; }
   body { font-family: monospace; max-width: 60em; margin: 2em auto; padding: 0 1em; }
   h1 { font-size: 1.2em; }
   nav { margin-bottom: 1.5em; border-bottom: 1px solid #ccc; padding-bottom: 0.5em; }
   nav a { color: inherit; text-decoration: none; margin-right: 1.5em; }
   nav a:hover { text-decoration: underline; }
-  nav .active { font-weight: bold; }
+  nav .active { font-weight: bold; margin-right: 1.5em; }
   p { line-height: 1.6; }
   ul { line-height: 1.6; }
   a { color: inherit; }
+  blockquote { border-left: 2px solid #ccc; margin-left: 0; padding-left: 1em; color: #555; margin-bottom: 0.2em; }
+  .attribution { text-align: right; color: #777; margin-top: 0; margin-bottom: 1em; }
 </style>
 </head>
 <body>
 <nav>
   <strong>Last Orders Pi</strong> &nbsp;&middot;&nbsp;
   <a href="index.html">Simulator</a> &nbsp;&middot;&nbsp;
-  <span class="active">About</span> &nbsp;&middot;&nbsp;
+  <span class="active">Info</span> &nbsp;&middot;&nbsp;
   <a href="https://github.com/emile/last-orders-pi">Source</a>
 </nav>
-<h1>Last Orders Pi</h1>
 
-<p>1120 decimal digits of &pi; were known in 1949, before that record was shattered
-by ENIAC using vacuum tubes and punch cards
-[<a href="https://doi.org/10.1090%2FS0025-5718-1950-0037597-6">1</a>].</p>
+<blockquote>
+<p>in May 1949 a new form of human activity began</p>
+</blockquote>
+<p class="attribution">&mdash; Robin Milner, at the EDSAC 99 anniversary event</p>
+<p>I first became interested in EDSAC through following the progress of
+the heroic <a href="https://www.tnmoc.org/edsac">EDSAC Replica
+Project</a>. The replica team are painstakingly retracing the steps of
+the original creators, reconstructing one of the first digital
+stored-program computers. The possibility of working hardware inspired
+me to investigate and attempt to produce some software for it. In the
+process I've gained appreciation for the magnitude of the achievement
+and the early shape of this new human activity.</p>
 
-<p>This project explores whether EDSAC could in theory have matched
-or beaten the ENIAC record of 2037 decimal places by using paper tape for storage.</p>
+<blockquote>
+<p>by today&rsquo;s standards the book is pretty unreadable!</p>
+</blockquote>
+<p class="attribution">&mdash; Edsger Dijkstra, EWD718</p>
+<p>The reference text for programming EDSAC has a long-winded title: THE
+PREPARATION OF PROGRAMS FOR AN ELECTRONIC DIGITAL COMPUTER (or WWG1951
+after the author surnames). &ldquo;Electronic&rdquo; and &ldquo;digital&rdquo; might seem
+redundant, but there were analog differential analysers and most
+computers were human.</p>
+<p>Reading across a 70 year divide in a fast-moving field is
+challenging, partly because most typical search keywords and terminology
+of today haven&rsquo;t been invented yet, e.g. bit, byte, boot, register,
+operating system.</p>
+<p>I was surprised by the lack of precision about the semantics of
+operations in the book. Perhaps because they were still evolving, or
+because the authors wanted the freedom to make changes. Or possibly
+because programmers were expected to discover the semantics by
+interacting with the hardware. In the present day the listings together
+with known outputs of extant programs proved a better reference for
+corner cases.</p>
+<p>The quest for stronger abstractions is very apparent. There&rsquo;s
+placeholder syntax for variables and concepts that exist in the text,
+but not the machine language. A lot of symbolic structure is carried by
+the programmer, either in their head or the margins of their program
+sheets. The second revision of initial orders (an early bootloader)
+freed the programmer from some manual bookkeeping that a modern linker
+does.</p>
 
-<p>The idea of using magnetic tape as addressable auxiliary storage was discussed by
-the creators of EDSAC in 1956, lending some credibility to the idea
-[<a href="https://doi.org/10.1049/pi-b-1.1956.0070">2</a>]
-[<a href="https://doi.org/10.1109%2F85.194055">3</a>].</p>
-
-<p>Eiiti Wada wrote a digit generator for EDSAC in 2022, based on Machin&rsquo;s formula.
-It generates 500 digits using main memory (mercury-based delay lines)
-[<a href="https://www.dcs.warwick.ac.uk/~edsac/Programs2/EiitiPie.html">4</a>].
-This effort demonstrates that the original EDSAC hardware probably lacked
-the capacity to match the ENIAC record.</p>
-
-<p>This project demonstrates generating about 250 digits using main memory
-and many thousands of digits using paper tape as storage. There are many caveats:</p>
+<blockquote>
+<p>It is, in fact, rare for a program to work correctly the first time it is tried</p>
+</blockquote>
+<p class="attribution">&mdash; WWG1951</p>
+<p>Creating programs of meaningful size for EDSAC is extremely
+difficult, in a way you understand better by trying.</p>
 <ul>
-  <li>the computation requires an impractical length of paper tape</li>
-  <li>the computation would take very long on real hardware</li>
-  <li>the algorithm used did not exist at the time</li>
+<li>the hardware made some bits much harder to access</li>
+<li>no general purpose registers or index register</li>
+<li>extremely limited storage</li>
+<li>liberal use of self-modifying code</li>
+<li>no stack</li>
+<li>no overflow detection, or any flags</li>
+<li>no unconditional jump</li>
 </ul>
-
-<p>A browser-based EDSAC simulator is included with extended IO instructions
-not present in the original hardware, but which could plausibly have existed:</p>
-<ul>
-  <li>Toggle output to perforator, punching paper tape (instead of teleprinter)</li>
-  <li>Toggle output to teleprinter (instead of perforator)</li>
-  <li>Switch input to paper tape</li>
-</ul>
-
-<p>Switching the input to paper tape might seem superfluous, since input
-is normally read from paper tape by default. The additional instruction
-is intended to draw a distinction between tape containing instructions
-and tape containing data from previous output to the perforator.</p>
-
-<p>There are no instructions for seeking, rewinding or addressing the tapes,
-so from the programmer&rsquo;s perspective storage appears as a write head followed by
-a read head on an infinite buffer.</p>
+<p>The first drafts of what became <code>pi_tank.asm</code> were written
+directly in EDSAC operations. It was excessively tedious, even with the
+help of relocatable subroutines afforded by initial orders 2. It felt a
+bit like cheating to create an assembler, but it was also instinctive.
+Andrew Herbert <a href="https://github.com/andrewjherbert/edsacasm">did
+the same</a>, so at least I&rsquo;m not alone!</p>
+<p>John von Neumann was reportedly very upset, around the same time at
+Princeton, when one of his students wrote an assembler. His argument was
+that using a scientific instrument for clerical work is a waste. His
+objection has merit in economic terms: computer time was so precious
+that the human should perform the machine translation, and an assembler
+was a luxury. That position is incomprehensible today, because the
+economics have inverted. Programmer time is expensive and machine time
+is practically free.</p>
+<p>Access to computing was extremely rarified in 1949: only a single
+machine, in a single building in Cambridge, tended by specialists,
+available to a few researchers. Computing was a privilege, one that you
+can enjoy from the comfort of a browser tab. Try a game of tic-tac-toe
+written in 1952, or discover whether EDSAC could have held the record
+for digits of pi in an alternative history!</p>
+<p>Based on age you might think the hardware of today should be a strict
+superset of its capabilities, much like your phone is orders of
+magnitude more capable than the computer on Voyager. But EDSAC&rsquo;s
+accumulator is 71 bits wide &mdash; larger than a modern general-purpose
+register. The past has some surprising dimensions.</p>
 </body>
 </html>
